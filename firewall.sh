@@ -64,11 +64,26 @@ save_file() {
 	tmpfile2=$(mktemp /tmp/firewall2_XXXXX)
 	pattern='/chain vm'$vm_id'-ports \{/,/^\W+}'
 	nft  -s list chain inet filter vm${vm_id}-ports | sed -n -E "$pattern/p" > $tmpfile
-	sed -E "$pattern/c_PATTERN_" /etc/nftables/vm/$vm_name.nft | sed -e "/_PATTERN_/r $tmpfile" -e "/_PATTERN_/d" > $tmpfile2
-	mv $tmpfile2 /etc/nftables/vm/$vm_name.nft
+	if grep -q "chain vm${vm_id}-ports" /etc/nftables/vm/$vm_name.nft; then
+		sed -E "$pattern/c_PATTERN_" /etc/nftables/vm/$vm_name.nft | sed -e "/_PATTERN_/r $tmpfile" -e "/_PATTERN_/d" > $tmpfile2
+		mv $tmpfile2 /etc/nftables/vm/$vm_name.nft
+	else
+		cat << EOF >> /etc/nftables/vm/$vm_name.nft
+table inet filter {
+        chain FORWARD {
+                jump vm7-ports
+        }
+EOF
+ 		cat $tmpfile >> /etc/nftables/vm/$vm_name.nft
+ 		echo '}' >> /etc/nftables/vm/$vm_name.nft
+ 	fi
 	rm -f $tmpfile $tmpfile2
 }
 add_rule() {
+	if [ $(check_chain) -ne 0 ]; then
+		nft add chain inet filter vm${vm_id}-ports
+		nft add rule inet filter FORWARD jump vm${vm_id}-ports
+	fi
 	case "$direction" in
 		in)
 			dir_int="oifname"
